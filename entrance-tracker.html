@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Entrance Tracker</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1c2430;--muted:#6b7686;--line:#e1e5eb;--in:#eef1f5;--out:#e5484d;--outtxt:#fff;--accent:#2563eb;--a:#2563eb;--b:#0d9488;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10141a;--card:#181e27;--text:#e8ecf2;--muted:#8d98a8;--line:#2a3340;--in:#232c38;--out:#ef5a5f;--accent:#5b8def;--a:#5b8def;--b:#2dd4bf}}
+:root[data-theme="dark"]{--bg:#10141a;--card:#181e27;--text:#e8ecf2;--muted:#8d98a8;--line:#2a3340;--in:#232c38;--out:#ef5a5f;--accent:#5b8def;--a:#5b8def;--b:#2dd4bf}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:16px;max-width:1200px;margin:0 auto}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+h1{font-size:20px;margin:0}
+.sub{color:var(--muted);font-size:13px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+button{font:inherit;cursor:pointer}
+.act{border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 14px;border-radius:8px}
+.act.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.act.danger{color:var(--out)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:800px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+.card h2{font-size:16px;margin:0 0 10px;display:flex;justify-content:space-between;align-items:center}
+.tag{display:inline-block;color:#fff;border-radius:6px;padding:2px 10px;font-weight:600}
+.cnt{font-size:12px;color:var(--muted);font-weight:400}
+.nums{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:5px}
+.n{border:1px solid var(--line);background:var(--in);color:var(--text);border-radius:7px;padding:8px 0;font-weight:600;font-size:13px}
+.n.out{background:var(--out);border-color:var(--out);color:var(--outtxt)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.timer{font-variant-numeric:tabular-nums;font-weight:700;color:var(--out);font-size:17px}
+.empty{color:var(--muted);padding:6px 0}
+.scroll{overflow-x:auto;max-height:420px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:520px}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card)}
+td.t{font-variant-numeric:tabular-nums}
+.live{color:var(--out);font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Entrance Tracker</h1>
+    <div class="sub">Tap a number to mark it as <b>left</b>. Tap it again when the person <b>enters back</b>.</div>
+  </div>
+  <div class="btns">
+    <button class="act danger" id="reset">Reset all</button>
+    <button class="act primary" id="export">Export to Excel</button>
+  </div>
+</header>
+
+<div class="grid2">
+  <div class="card"><h2><span><span class="tag" style="background:var(--a)">Group A</span></span><span class="cnt" id="cntA"></span></h2><div class="nums" id="gridA"></div></div>
+  <div class="card"><h2><span><span class="tag" style="background:var(--b)">Group B</span></span><span class="cnt" id="cntB"></span></h2><div class="nums" id="gridB"></div></div>
+</div>
+
+<div class="card">
+  <h2>Currently outside <span class="cnt" id="cntOut"></span></h2>
+  <div id="outList"></div>
+</div>
+
+<div class="card">
+  <h2>Log</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Group</th><th>No.</th><th>Left</th><th>Entered</th><th>Time outside</th></tr></thead>
+    <tbody id="log"></tbody>
+  </table></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const KEY='entrance-tracker-v1';
+let recs=[];
+try{recs=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){recs=[]}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(recs))}catch(e){}};
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0');
+const dur=ms=>{const s=Math.max(0,Math.floor(ms/1000));return pad(Math.floor(s/3600))+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60)};
+const full=t=>{const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())};
+const tm=t=>full(t).slice(11);
+const active=(g,n)=>recs.find(r=>r.g===g&&r.n===n&&r.in===null);
+
+function toggle(g,n){
+  const a=active(g,n);
+  if(a)a.in=Date.now(); else recs.push({g,n,out:Date.now(),in:null});
+  save();render();
+}
+
+function buildGrid(g){
+  const el=$('grid'+g);el.innerHTML='';
+  for(let n=1;n<=100;n++){
+    const b=document.createElement('button');
+    b.className='n';b.textContent=n;b.dataset.g=g;b.dataset.n=n;
+    b.onclick=()=>toggle(g,n);
+    el.appendChild(b);
+  }
+}
+['A','B'].forEach(buildGrid);
+
+function render(){
+  document.querySelectorAll('.n').forEach(b=>{
+    b.classList.toggle('out',!!active(b.dataset.g,+b.dataset.n));
+  });
+  const outs=recs.filter(r=>r.in===null).sort((x,y)=>x.out-y.out);
+  ['A','B'].forEach(g=>{$('cnt'+g).textContent=outs.filter(r=>r.g===g).length+' outside · '+(100-outs.filter(r=>r.g===g).length)+' inside'});
+  $('cntOut').textContent=outs.length;
+  $('outList').innerHTML=outs.length?'':'<div class="empty">Everyone is inside.</div>';
+  outs.forEach(r=>{
+    const d=document.createElement('div');d.className='row';
+    d.innerHTML='<div><b>'+r.g+'-'+r.n+'</b> <span class="sub">left at '+tm(r.out)+'</span></div><div style="display:flex;gap:10px;align-items:center"><span class="timer" data-out="'+r.out+'">'+dur(Date.now()-r.out)+'</span></div>';
+    const b=document.createElement('button');b.className='act';b.textContent='Entered';b.onclick=()=>toggle(r.g,r.n);
+    d.lastChild.appendChild(b);
+    $('outList').appendChild(d);
+  });
+  const lg=$('log');lg.innerHTML='';
+  if(!recs.length){lg.innerHTML='<tr><td colspan="5" class="empty">No records yet.</td></tr>'}
+  [...recs].reverse().forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML='<td>'+r.g+'</td><td>'+r.n+'</td><td class="t">'+full(r.out)+'</td><td class="t">'+(r.in?full(r.in):'—')+'</td>'+
+      (r.in?'<td class="t">'+dur(r.in-r.out)+'</td>':'<td class="t live" data-out="'+r.out+'">'+dur(Date.now()-r.out)+'</td>');
+    lg.appendChild(tr);
+  });
+}
+setInterval(()=>{document.querySelectorAll('[data-out]').forEach(e=>{e.textContent=dur(Date.now()-(+e.dataset.out))})},1000);
+
+$('export').onclick=()=>{
+  if(typeof XLSX==='undefined'){alert('Excel library failed to load.');return}
+  const now=Date.now();
+  const rows=[['Group','Number','Left','Entered','Time outside','Status']];
+  recs.forEach(r=>rows.push([r.g,r.n,full(r.out),r.in?full(r.in):'',dur((r.in||now)-r.out),r.in?'Returned':'Still outside']));
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:8},{wch:8},{wch:20},{wch:20},{wch:14},{wch:14}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Log');
+  XLSX.writeFile(wb,'entrance-log-'+full(now).slice(0,10)+'.xlsx');
+};
+
+let armed=false;
+$('reset').onclick=function(){
+  if(!armed){armed=true;this.textContent='Click again to confirm';setTimeout(()=>{armed=false;this.textContent='Reset all'},3000);return}
+  recs=[];save();armed=false;this.textContent='Reset all';render();
+};
+render();
+</script>
+</body>
+</html>
